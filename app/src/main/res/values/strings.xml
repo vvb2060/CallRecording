@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Call Recording</string>
+    <string name="app_description">Enable call recording for Google Dialer</string>
+</resources>
