@@ -65,7 +65,6 @@ dependencies {
 }
 
 val optimizeReleaseRes by tasks.registering(Exec::class) {
-    tasks.named("optimizeReleaseResources").get().finalizedBy(this.path)
     val aapt2 = Paths.get(
         project.android.sdkDirectory.path,
         "build-tools", project.android.buildToolsVersion, "aapt2"
