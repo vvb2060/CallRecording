@@ -2,6 +2,7 @@ package io.github.vvb2060.callrecording.xposed;
 
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
 
 import java.io.File;
@@ -9,6 +10,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -86,12 +88,12 @@ public class Init implements IXposedHookLoadPackage {
         }
     }
 
-    private static void hookGetCurrentLocaleForBuiltInAudioFile(DexHelper dex) {
-        var getCurrentLocaleForBuiltInAudioFile = Arrays.stream(
-                        dex.findMethodUsingString("getCurrentLocaleForBuiltInAudioFile",
+    private static void hookGetSupportedLocaleFromCountryCode(DexHelper dex) {
+        var getSupportedLocaleFromCountryCode = Arrays.stream(
+                        dex.findMethodUsingString("getSupportedLocaleFromCountryCode",
                                 false,
                                 -1,
-                                (short) 0,
+                                (short) 3,
                                 null,
                                 -1,
                                 null,
@@ -101,18 +103,56 @@ public class Init implements IXposedHookLoadPackage {
                 .mapToObj(dex::decodeMethodIndex)
                 .filter(Objects::nonNull)
                 .findFirst();
-        if (getCurrentLocaleForBuiltInAudioFile.isPresent()) {
-            var method = getCurrentLocaleForBuiltInAudioFile.get();
-            Log.d(TAG, "getCurrentLocaleForBuiltInAudioFile: " + method);
+        if (getSupportedLocaleFromCountryCode.isPresent()) {
+            var method = getSupportedLocaleFromCountryCode.get();
+            Log.d(TAG, "getSupportedLocaleFromCountryCode: " + method);
             XposedBridge.hookMethod(method, new XC_MethodReplacement() {
                 @Override
                 protected Object replaceHookedMethod(MethodHookParam param) {
-                    Log.d(TAG, "getCurrentLocaleForBuiltInAudioFile: Optional.empty()");
+                    Log.d(TAG, "getSupportedLocaleFromCountryCode: " + Arrays.toString(param.args));
                     return Optional.empty();
                 }
             });
         } else {
-            Log.e(TAG, "getCurrentLocaleForBuiltInAudioFile method not found");
+            Log.e(TAG, "getSupportedLocaleFromCountryCode method not found");
+        }
+    }
+
+    @SuppressWarnings({"SoonBlockedPrivateApi", "JavaReflectionMemberAccess"})
+    private static void hookDispatchOnInit() {
+        try {
+            Method dispatchOnInit = TextToSpeech.class.getDeclaredMethod("dispatchOnInit", int.class);
+            XposedBridge.hookMethod(dispatchOnInit, new XC_MethodHook() {
+                @Override
+                protected void beforeHookedMethod(MethodHookParam param) {
+                    Log.d(TAG, "dispatchOnInit: " + Arrays.toString(param.args));
+                    if (!Objects.equals(param.args[0], TextToSpeech.SUCCESS)) {
+                        param.args[0] = TextToSpeech.SUCCESS;
+                        Log.w(TAG, "TTS failed, ignore");
+                    }
+                }
+            });
+        } catch (NoSuchMethodException e) {
+            Log.e(TAG, "dispatchOnInit method not found", e);
+        }
+    }
+
+    private static void hookIsLanguageAvailable() {
+        try {
+            Method isLanguageAvailable = TextToSpeech.class.getDeclaredMethod("isLanguageAvailable", Locale.class);
+            XposedBridge.hookMethod(isLanguageAvailable, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    Log.d(TAG, "isLanguageAvailable: " + Arrays.toString(param.args) +
+                            " -> " + param.getResult());
+                    if ((int) param.getResult() < TextToSpeech.LANG_AVAILABLE) {
+                        param.setResult(TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE);
+                        Log.w(TAG, "TTS language not available, ignore");
+                    }
+                }
+            });
+        } catch (NoSuchMethodException e) {
+            Log.e(TAG, "isLanguageAvailable method not found", e);
         }
     }
 
@@ -138,6 +178,16 @@ public class Init implements IXposedHookLoadPackage {
                         } catch (IOException e) {
                             Log.e(TAG, "synthesizeToFile: cannot write " + file, e);
                         }
+                        try {
+                            var field = param.thisObject.getClass().getDeclaredField("mUtteranceProgressListener");
+                            field.setAccessible(true);
+                            var listener = (UtteranceProgressListener) field.get(param.thisObject);
+                            if (listener == null) return;
+                            var onDone = UtteranceProgressListener.class.getDeclaredMethod("onDone", String.class);
+                            onDone.invoke(listener, (String) param.args[3]);
+                        } catch (ReflectiveOperationException e) {
+                            Log.e(TAG, "synthesizeToFile: cannot invoke onDone", e);
+                        }
                     }
                 }
             });
@@ -153,10 +203,12 @@ public class Init implements IXposedHookLoadPackage {
             try (var dex = new DexHelper(lpparam.classLoader)) {
                 hookCanRecordCall(dex);
                 hookWithinCrosbyGeoFence(dex);
-                hookGetCurrentLocaleForBuiltInAudioFile(dex);
-                hookSynthesizeToFile();
-                Log.d(TAG, "hook done");
+                hookGetSupportedLocaleFromCountryCode(dex);
             }
+            hookSynthesizeToFile();
+            hookDispatchOnInit();
+            hookIsLanguageAvailable();
+            Log.d(TAG, "hook done");
         }).start();
         Log.d(TAG, "handleLoadPackage done");
     }
