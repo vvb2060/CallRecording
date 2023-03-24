@@ -16,8 +16,8 @@ plugins {
 
 android {
     compileSdk = 33
-    buildToolsVersion = "33.0.0"
-    ndkVersion = "23.2.8568313"
+    buildToolsVersion = "33.0.2"
+    ndkVersion = "25.2.9519653"
     namespace = "io.github.vvb2060.callrecording"
     defaultConfig {
         minSdk = 28
