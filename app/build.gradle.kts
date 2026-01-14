@@ -15,13 +15,8 @@ plugins {
 }
 
 android {
-    compileSdk = 33
-    buildToolsVersion = "33.0.2"
-    ndkVersion = "25.2.9519653"
     namespace = "io.github.vvb2060.callrecording"
     defaultConfig {
-        minSdk = 28
-        targetSdk = 33
         versionCode = 2
         versionName = "1.1"
         externalNativeBuild {
@@ -36,23 +31,21 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            vcsInfo.include = false
             proguardFiles("proguard-rules.pro")
             signingConfig = signingConfigs["debug"]
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
-    buildFeatures {
-        buildConfig = false
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     externalNativeBuild {
         ndkBuild {
             path = file("src/main/jni/Android.mk")
         }
     }
-    packagingOptions {
+    packaging {
         resources {
             excludes += "**"
         }
@@ -74,7 +67,8 @@ val optimizeReleaseRes by tasks.registering(Exec::class) {
     )
     val zip = Paths.get(
         project.buildDir.path, "intermediates",
-        "optimized_processed_res", "release", "resources-release-optimize.ap_"
+        "optimized_processed_res", "release", "optimizeReleaseResources",
+        "resources-release-optimize.ap_"
     )
     val optimized = zip.resolveSibling("optimized")
     commandLine(

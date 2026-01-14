@@ -135,7 +135,7 @@ namespace {
                     return {};
                 }
 
-                for (int c = 0;; ++c) {
+                for (;;) {
                     err = inflate(&d_stream, Z_NO_FLUSH);
                     if (err == Z_STREAM_END) break;
                     if (err != Z_OK) {
