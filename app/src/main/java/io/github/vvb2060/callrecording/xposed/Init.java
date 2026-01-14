@@ -1,9 +1,13 @@
 package io.github.vvb2060.callrecording.xposed;
 
+import android.app.Activity;
+import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.speech.tts.UtteranceProgressListener;
 import android.util.Log;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -88,36 +92,6 @@ public class Init implements IXposedHookLoadPackage {
         }
     }
 
-    private static void hookGetSupportedLocaleFromCountryCode(DexHelper dex) {
-        var getSupportedLocaleFromCountryCode = Arrays.stream(
-                        dex.findMethodUsingString("getSupportedLocaleFromCountryCode",
-                                false,
-                                -1,
-                                (short) 3,
-                                null,
-                                -1,
-                                null,
-                                null,
-                                null,
-                                true))
-                .mapToObj(dex::decodeMethodIndex)
-                .filter(Objects::nonNull)
-                .findFirst();
-        if (getSupportedLocaleFromCountryCode.isPresent()) {
-            var method = getSupportedLocaleFromCountryCode.get();
-            Log.d(TAG, "getSupportedLocaleFromCountryCode: " + method);
-            XposedBridge.hookMethod(method, new XC_MethodReplacement() {
-                @Override
-                protected Object replaceHookedMethod(MethodHookParam param) {
-                    Log.d(TAG, "getSupportedLocaleFromCountryCode: " + Arrays.toString(param.args));
-                    return Optional.empty();
-                }
-            });
-        } else {
-            Log.e(TAG, "getSupportedLocaleFromCountryCode method not found");
-        }
-    }
-
     @SuppressWarnings({"SoonBlockedPrivateApi", "JavaReflectionMemberAccess"})
     private static void hookDispatchOnInit() {
         try {
@@ -196,6 +170,36 @@ public class Init implements IXposedHookLoadPackage {
         }
     }
 
+    private static void hookActivityOnResume() {
+        try {
+            Method onResume = Activity.class.getDeclaredMethod("onResume");
+            XposedBridge.hookMethod(onResume, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    var context = ((Activity) param.thisObject).getApplicationContext();
+                    checkUnsupportedVersion(context);
+                }
+            });
+        } catch (NoSuchMethodException e) {
+            Log.e(TAG, "onResume method not found", e);
+        }
+    }
+
+    private static void checkUnsupportedVersion(Context context) {
+        try {
+            var pm = context.getPackageManager();
+            var info = pm.getPackageInfo(context.getPackageName(), 0);
+            var versionName = info.versionName;
+            if (versionName != null && versionName.endsWith("downloadable")) {
+                Toast.makeText(context, "CallRecording: Unsupported version, "+
+                        "please use full version.", Toast.LENGTH_LONG).show();
+                Log.w(TAG, "Unsupported version detected: " + versionName);
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            Log.w(TAG, "Cannot get package info", e);
+        }
+    }
+
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
         if (!"com.google.android.dialer".equals(lpparam.packageName)) return;
@@ -203,11 +207,11 @@ public class Init implements IXposedHookLoadPackage {
             try (var dex = new DexHelper(lpparam.classLoader)) {
                 hookCanRecordCall(dex);
                 hookWithinCrosbyGeoFence(dex);
-                hookGetSupportedLocaleFromCountryCode(dex);
             }
             hookSynthesizeToFile();
             hookDispatchOnInit();
             hookIsLanguageAvailable();
+            hookActivityOnResume();
             Log.d(TAG, "hook done");
         }).start();
         Log.d(TAG, "handleLoadPackage done");
